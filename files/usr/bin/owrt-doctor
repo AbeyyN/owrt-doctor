@@ -3,7 +3,7 @@
 VERSION="0.1.0"
 NAME="OWRT Doctor"
 
-SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+SELF_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
 CHECK_DIR="${OWRT_DOCTOR_CHECK_DIR:-/usr/lib/owrt-doctor/checks.d}"
 
 if [ ! -d "$CHECK_DIR" ] && [ -d "$SELF_DIR/../lib/owrt-doctor/checks.d" ]; then
