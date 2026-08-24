@@ -1,0 +1,53 @@
+name: Bug report
+description: Report reproducible OWRT Doctor behavior
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove secrets before posting logs or configuration.
+
+  - type: input
+    id: version
+    attributes:
+      label: OWRT Doctor version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: openwrt
+    attributes:
+      label: OpenWrt version
+      placeholder: "25.12.x"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device / target
+      placeholder: "x86_64, ipq807x, etc."
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I reviewed diagnostic text and removed secrets before posting.
+          required: true

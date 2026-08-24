@@ -1,0 +1,225 @@
+#!/bin/sh
+
+VERSION="0.1.0"
+NAME="OWRT Doctor"
+
+SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+CHECK_DIR="${OWRT_DOCTOR_CHECK_DIR:-/usr/lib/owrt-doctor/checks.d}"
+
+if [ ! -d "$CHECK_DIR" ] && [ -d "$SELF_DIR/../lib/owrt-doctor/checks.d" ]; then
+	CHECK_DIR="$SELF_DIR/../lib/owrt-doctor/checks.d"
+fi
+
+usage() {
+	cat <<'EOF'
+OWRT Doctor - privacy-first diagnostics for OpenWrt
+
+Usage:
+  owrt-doctor scan
+  owrt-doctor bundle [OUTPUT.tar.gz]
+  owrt-doctor sanitize
+  owrt-doctor version
+  owrt-doctor help
+EOF
+}
+
+sanitize_stream() {
+	sed -E \
+		-e "s/\.((key|password|passwd|secret|token|psk|private_key|auth|cookie|credential))='[^']*'/.\1='<redacted>'/g" \
+		-e "s/(option[[:space:]]+(key|password|passwd|secret|token|psk|private_key|auth|cookie|credential)[[:space:]]+)'[^']*'/\1'<redacted>'/g" \
+		-e "s/(\.ssid=)'[^']*'/\1'<redacted-ssid>'/g" \
+		-e 's/([" ](key|password|passwd|secret|token|psk|private_key|auth|cookie|credential)[" ]*[=:][ ]*)"[^"]*"/\1"<redacted>"/g' \
+		-e 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/xx:xx:xx:xx:xx:xx/g' \
+		-e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<redacted-email>/g'
+}
+
+status_line() {
+	status="$1"
+	id="$2"
+	title="$3"
+	detail="$4"
+	printf '%-5s %-20s %s' "$status" "$id" "$title"
+	[ -n "$detail" ] && printf ' - %s' "$detail"
+	printf '\n'
+}
+
+run_scan() {
+	pass=0
+	warn=0
+	fail=0
+	skip=0
+
+	printf '%s v%s\n\n' "$NAME" "$VERSION"
+
+	if [ ! -d "$CHECK_DIR" ]; then
+		printf 'FAIL  CORE_CHECK_DIR       Check directory missing - %s\n' "$CHECK_DIR"
+		return 2
+	fi
+
+	found=0
+	for check in "$CHECK_DIR"/*.sh; do
+		[ -f "$check" ] || continue
+		found=1
+		output="$(sh "$check" 2>&1)"
+		rc=$?
+
+		if [ "$rc" -ne 0 ] && [ -z "$output" ]; then
+			status_line "FAIL" "PLUGIN_ERROR" "$(basename "$check") failed" "exit=$rc"
+			fail=$((fail + 1))
+			continue
+		fi
+
+		oldifs="$IFS"
+		IFS='
+'
+		for line in $output; do
+			IFS='|' read -r st id title detail <<EOF
+$line
+EOF
+			case "$st" in
+				PASS) pass=$((pass + 1)) ;;
+				WARN) warn=$((warn + 1)) ;;
+				FAIL) fail=$((fail + 1)) ;;
+				SKIP) skip=$((skip + 1)) ;;
+				*)
+					st="WARN"
+					id="PLUGIN_OUTPUT"
+					title="$(basename "$check") returned unrecognized output"
+					detail="$line"
+					warn=$((warn + 1))
+					;;
+			esac
+			status_line "$st" "$id" "$title" "$detail"
+		done
+		IFS="$oldifs"
+	done
+
+	if [ "$found" -eq 0 ]; then
+		status_line "FAIL" "CORE_NO_CHECKS" "No check plugins installed" "$CHECK_DIR"
+		fail=$((fail + 1))
+	fi
+
+	printf '\nSummary: %s pass, %s warn, %s fail, %s skip\n' "$pass" "$warn" "$fail" "$skip"
+
+	[ "$fail" -gt 0 ] && return 2
+	[ "$warn" -gt 0 ] && return 1
+	return 0
+}
+
+make_bundle() {
+	ts="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown-time)"
+	out="${1:-/tmp/owrt-doctor-${ts}.tar.gz}"
+	tmp="${TMPDIR:-/tmp}/owrt-doctor.$$"
+
+	umask 077
+	mkdir -p "$tmp" || {
+		echo "Unable to create temporary directory: $tmp" >&2
+		return 2
+	}
+	trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+	{
+		echo "OWRT Doctor support bundle"
+		echo "version=$VERSION"
+		echo "created=$(date -Iseconds 2>/dev/null || date)"
+		echo "privacy=default-redaction"
+		echo "upload=never-automatic"
+	} > "$tmp/manifest.txt"
+
+	run_scan > "$tmp/doctor-report.txt" 2>&1 || true
+
+	{
+		echo "### system board"
+		ubus call system board 2>&1 || true
+		echo
+		echo "### uname"
+		uname -a 2>&1 || true
+		echo
+		echo "### release"
+		cat /etc/openwrt_release 2>&1 || true
+		echo
+		echo "### uptime"
+		cat /proc/uptime 2>&1 || true
+		echo
+		echo "### memory"
+		cat /proc/meminfo 2>&1 || true
+		echo
+		echo "### filesystem"
+		df -h 2>&1 || true
+	} | sanitize_stream > "$tmp/system.txt"
+
+	{
+		echo "### addresses"
+		ip addr 2>&1 || true
+		echo
+		echo "### routes"
+		ip route 2>&1 || true
+		echo
+		echo "### IPv6 routes"
+		ip -6 route 2>&1 || true
+		echo
+		echo "### network interfaces"
+		ubus call network.interface dump 2>&1 || true
+		echo
+		echo "### wireless"
+		ubus call network.wireless status 2>&1 || true
+		echo
+		echo "### DHCP leases"
+		cat /tmp/dhcp.leases 2>&1 || true
+	} | sanitize_stream > "$tmp/network.txt"
+
+	{
+		echo "### sanitized UCI"
+		uci show 2>&1 || true
+	} | sanitize_stream > "$tmp/uci-sanitized.txt"
+
+	{
+		echo "### recent system log"
+		if command -v logread >/dev/null 2>&1; then
+			logread 2>&1 | tail -n 400
+		else
+			echo "logread unavailable"
+		fi
+		echo
+		echo "### recent kernel log"
+		dmesg 2>&1 | tail -n 250 || true
+	} | sanitize_stream > "$tmp/logs.txt"
+
+	if command -v tailscale >/dev/null 2>&1; then
+		{
+			echo "### tailscale status"
+			tailscale status 2>&1 || true
+		} | sanitize_stream > "$tmp/tailscale.txt"
+	fi
+
+	if ! command -v tar >/dev/null 2>&1; then
+		echo "tar is required to create a bundle" >&2
+		return 2
+	fi
+
+	tar -czf "$out" -C "$tmp" . || {
+		echo "Failed to create bundle: $out" >&2
+		return 2
+	}
+
+	rm -rf "$tmp"
+	trap - EXIT HUP INT TERM
+
+	echo "Bundle created: $out"
+	echo "Review the archive before sharing it."
+	echo "OWRT Doctor never uploads the bundle automatically."
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+	scan) run_scan ;;
+	bundle) shift; make_bundle "${1:-}" ;;
+	sanitize) sanitize_stream ;;
+	version|--version|-V) echo "$NAME v$VERSION" ;;
+	help|--help|-h) usage ;;
+	*)
+		echo "Unknown command: $cmd" >&2
+		usage >&2
+		exit 2
+		;;
+esac
