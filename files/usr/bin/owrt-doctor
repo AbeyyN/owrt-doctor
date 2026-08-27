@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 NAME="OWRT Doctor"
 
 SELF_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
