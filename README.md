@@ -19,14 +19,19 @@ owrt-doctor bundle
 
 ## Current status
 
-**v0.1.0 — bootstrap release**
+**v0.2.0 — Topology Intelligence**
 
 Checks include:
 
 - system uptime, free memory, root filesystem usage and clock sanity,
-- default route and WAN status,
+- OpenWrt package-manager generation (`apk` or `opkg`),
+- time-sync daemon health,
+- default route and active upstream interface,
+- topology classification for router, LAN-upstream, AP/bridge, repeater/bridge and custom-upstream layouts,
+- IPv6 global-address/default-route health,
 - raw Internet reachability and DNS resolution,
 - dnsmasq and DHCP lease visibility,
+- duplicate dynamic and static DHCP address detection,
 - wireless status,
 - firewall4 validation,
 - optional Tailscale daemon/status checks.
@@ -93,6 +98,8 @@ Then build:
 ```sh
 make package/owrt-doctor/compile V=s
 ```
+
+The package is architecture-independent (`PKGARCH:=all`). On OpenWrt generations using `opkg`, the build system emits the corresponding package format; on OpenWrt 25.12+ apk-based builds, the OpenWrt build system handles apk packaging.
 
 ## Compatibility target
 
