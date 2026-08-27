@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0] - 2026-08-27
+
+### Added
+- Topology Intelligence to classify conventional router, LAN-upstream, AP/bridge, wireless repeater/bridge and custom-upstream layouts.
+- IPv6 health detection for global addressing and default-route availability.
+- OpenWrt package-manager detection for both `apk` and `opkg` generations.
+- Time-sync daemon health detection for `sysntpd`, `ntpd` and `chronyd`.
+- Duplicate dynamic DHCP lease IP/client detection.
+- Duplicate static DHCP address detection from UCI configuration.
+- Architecture-independent package metadata (`PKGARCH:=all`) for shell-only package builds, including OpenWrt 25.12+ apk-based systems.
+
+### Changed
+- Bumped CLI and OpenWrt package version to 0.2.0.
+- Expanded diagnostics beyond WAN-centric assumptions to describe the active topology explicitly.
+
 ## [0.1.1] - 2026-08-27
 
 ### Fixed
