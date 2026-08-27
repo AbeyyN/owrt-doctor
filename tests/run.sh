@@ -36,7 +36,7 @@ assert_not_contains "$sanitized" "MyHomeWifi" "redacts SSID"
 assert_not_contains "$sanitized" "AA:BB:CC:DD:EE:FF" "redacts MAC address"
 assert_not_contains "$sanitized" "person@example.com" "redacts email-like identifier"
 assert_contains "$sanitized" "192.168.1.1" "retains useful private IP context"
-assert_contains "$(sh "$DOCTOR" version)" "0.1.0" "reports version"
+assert_contains "$(sh "$DOCTOR" version)" "0.1.1" "reports version"
 
 if [ "$fail" -ne 0 ]; then
 	echo "$fail test(s) failed"
