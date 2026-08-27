@@ -1,0 +1,119 @@
+name: Auto Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: owrt-doctor-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout validated main commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'main' }}
+          fetch-depth: 0
+
+      - name: Validate release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(sed -n 's/^VERSION="\([^"]*\)"/\1/p' files/usr/bin/owrt-doctor | head -n1)"
+          PKG_VERSION="$(sed -n 's/^PKG_VERSION:=//p' Makefile | head -n1)"
+
+          if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid semantic version in CLI: $VERSION" >&2
+            exit 1
+          fi
+
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "Version mismatch: CLI=$VERSION package=$PKG_VERSION" >&2
+            exit 1
+          fi
+
+          if ! grep -Fq "## [$VERSION]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no section for $VERSION" >&2
+            exit 1
+          fi
+
+          TAG="v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release metadata validated: $TAG"
+
+      - name: Run release tests
+        run: sh tests/run.sh
+
+      - name: Check for existing release
+        id: existing
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists; skipping creation."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release notes from changelog
+        if: steps.existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+
+          awk -v version="$VERSION" '
+            $0 == "## [" version "]" || index($0, "## [" version "] - ") == 1 { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ]; then
+            printf 'OWRT Doctor v%s\n' "$VERSION" > release-notes.md
+          fi
+
+          {
+            printf '\n### Validation\n'
+            printf -- '- Release metadata versions match.\n'
+            printf -- '- Project test suite passed in the release workflow.\n'
+            printf -- '- Release created automatically after CI success on `main`.\n'
+          } >> release-notes.md
+
+      - name: Create tag and GitHub Release
+        if: steps.existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          TARGET="$(git rev-parse HEAD)"
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET" \
+            --title "OWRT Doctor v$VERSION" \
+            --notes-file release-notes.md \
+            --latest
+
+          echo "Published $TAG from $TARGET"
