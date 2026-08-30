@@ -1,0 +1,44 @@
+name: Temporary NAS Caddy Rescue
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-nas-caddy-rescue.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rescue:
+    runs-on: self-hosted
+    timeout-minutes: 4
+    steps:
+      - name: Fix stale NAS Caddy bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          C="$HOME/.config/fujitsu-runner/nas-artifacts.env"
+          H="$HOME/bin/fujitsu-nas-ssh"
+          test -s "$C"; test -x "$H"
+          # shellcheck disable=SC1090
+          source "$C"
+          timeout 75s "$H" -o BatchMode=yes -o ConnectTimeout=5 "$PI_USER@$PI_HOST" "PI_HOST='$PI_HOST' CI_ROOT='$CI_ROOT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          S='sudo -n'; [ "$(id -u)" -eq 0 ] && S=''
+          F=/etc/caddy/Caddyfile
+          $S cp -a "$F" "$F.rescue-$(date +%s)"
+          T=$(mktemp)
+          $S cat "$F" | sed -E '/^[[:space:]]*bind[[:space:]]+100\.113\.183\.125([[:space:]]|$)/d' > "$T"
+          $S install -m 0644 "$T" "$F"; rm -f "$T"
+          $S caddy fmt --overwrite "$F"
+          $S caddy validate --config "$F"
+          ! $S grep -qE '^[[:space:]]*bind[[:space:]]+100\.113\.183\.125([[:space:]]|$)' "$F"
+          timeout 15s $S systemctl restart caddy
+          $S systemctl is-active --quiet caddy
+          echo '=== BUILDS.HOME ==='
+          curl -fsSI -H 'Host: builds.home' "http://$PI_HOST/" | head -1
+          echo '=== CADDY ==='
+          $S systemctl is-active caddy
+          echo 'CADDY_RESCUE_OK'
+          REMOTE
