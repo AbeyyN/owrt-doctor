@@ -1,0 +1,6 @@
+{
+  "name": "owrt-doctor",
+  "version": "0.1.0",
+  "description": "Privacy-first, read-only OpenWrt diagnostics for ChatGPT and Codex.",
+  "skills": "./skills/"
+}

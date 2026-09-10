@@ -1,0 +1,29 @@
+name: ChatGPT Plugin CI
+
+on:
+  push:
+    paths:
+      - "plugins/owrt-doctor-chatgpt/**"
+      - ".github/workflows/plugin-ci.yml"
+  pull_request:
+    paths:
+      - "plugins/owrt-doctor-chatgpt/**"
+      - ".github/workflows/plugin-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  mcp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/owrt-doctor-chatgpt
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run check
+      - run: npm test

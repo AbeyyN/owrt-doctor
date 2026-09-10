@@ -1,0 +1,21 @@
+{
+  "name": "@abeyytechxy/owrt-doctor-chatgpt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only OWRT Doctor MCP adapter for ChatGPT and Codex.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check tests/smoke.mjs",
+    "test": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "cors": "2.8.6",
+    "express": "5.2.1",
+    "zod": "3.25.76"
+  }
+}
